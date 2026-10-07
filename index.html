@@ -1,59 +1,97 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>T-Team Meme Editor</title>
-    <!-- Скрипт Telegram Web App -->
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <!-- Библиотека мощного фоторедактора -->
-    <script src="https://scaleflex.cloudimg.io/v7/plugins/filerobot-image-editor/latest/filerobot-image-editor.min.js"></script>
-    <style>
-        body, html { margin: 0; padding: 0; width: 100%; height: 100vh; background: #121212; }
-        #editor_container { width: 100%; height: 100%; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+  <title>T-Team Meme Editor</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://scaleflex.cloudimg.io/v7/plugins/filerobot-image-editor/latest/filerobot-image-editor.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0d0d0d; color: #fff; font-family: system-ui, sans-serif; height: 100vh; overflow: hidden; }
+    #editor { width: 100%; height: 100%; }
+    #fallback {
+      display: none; flex-direction: column; align-items: center; justify-content: center;
+      height: 100%; gap: 20px; padding: 20px; text-align: center;
+    }
+    button {
+      background: #00d2ff; color: #000; border: none; padding: 14px 28px;
+      border-radius: 12px; font-size: 16px; font-weight: bold; cursor: pointer;
+    }
+    input[type=file] { display: none; }
+  </style>
 </head>
 <body>
-    <div id="editor_container"></div>
+  <div id="editor"></div>
+  <div id="fallback">
+    <h2>😿 Не удалось загрузить картинку</h2>
+    <p>Telegram иногда блокирует прямые ссылки.<br>Загрузи фото вручную:</p>
+    <button onclick="document.getElementById('file').click()">📷 Выбрать фото</button>
+    <input type="file" id="file" accept="image/*" onchange="loadLocal(event)">
+  </div>
 
-    <script>
-        // Инициализируем Telegram Web App
-        const tg = window.Telegram.WebApp;
-        tg.expand(); // Разворачиваем на весь экран
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+    tg.expand();
 
-        // Получаем ссылку на картинку кота, которую бот передал в URL
-        const urlParams = new URLSearchParams(window.location.search);
-        const imageUrl = urlParams.get('img') || 'https://via.placeholder.com/500x500.png?text=No+Image';
+    const params = new URLSearchParams(location.search);
+    let imgSrc = params.get("img");
 
-        // Запускаем фоторедактор
-        const { TABS, TOOLS } = FilerobotImageEditor;
-        const config = {
-            source: imageUrl,
-            onSave: (editedImageObject, designState) => {
-                // Когда юзер нажимает "Сохранить", мы можем отправить картинку обратно в бота!
-                // Для простоты здесь мы просто скачиваем её юзеру на телефон
-                const link = document.createElement('a');
-                link.download = 'meme_cat.png';
-                link.href = editedImageObject.imageBase64;
-                link.click();
-                
-                tg.showAlert("Мем сохранен на твое устройство!");
-            },
-            annotationsCommon: {
-                fill: '#ff0000'
-            },
-            Text: { text: 'ТВОЙ ТЕКСТ ЗДЕСЬ' },
-            tabsIds: [TABS.ANNOTATE, TABS.ADJUST, TABS.WATERMARK], 
-            defaultTabId: TABS.ANNOTATE,
-            defaultToolId: TOOLS.TEXT
-        };
+    // Если передали file_id + token — собираем ссылку
+    const fileId = params.get("file_id");
+    const token  = params.get("bot_token");
+    if (fileId && token) {
+      // Telegram file links часто не работают из WebApp → сразу показываем fallback
+      imgSrc = null;
+    }
 
-        const imageEditor = new FilerobotImageEditor(
-            document.querySelector('#editor_container'),
-            config
-        );
+    function startEditor(source) {
+      document.getElementById("fallback").style.display = "none";
+      document.getElementById("editor").style.display = "block";
 
-        imageEditor.render();
-    </script>
+      const { TABS, TOOLS } = FilerobotImageEditor;
+      const editor = new FilerobotImageEditor(document.getElementById("editor"), {
+        source: source,
+        onSave: (edited) => {
+          const a = document.createElement("a");
+          a.href = edited.imageBase64;
+          a.download = "tteam_meme.png";
+          a.click();
+          tg.showAlert("Мем сохранён на устройство! 🎉");
+        },
+        tabsIds: [TABS.ANNOTATE, TABS.ADJUST, TABS.FINETUNE, TABS.RESIZE],
+        defaultTabId: TABS.ANNOTATE,
+        defaultToolId: TOOLS.TEXT,
+        theme: {
+          palette: {
+            "bg-primary": "#0d0d0d",
+            "accent-primary": "#00d2ff"
+          }
+        }
+      });
+      editor.render();
+    }
+
+    function loadLocal(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => startEditor(ev.target.result);
+      reader.readAsDataURL(file);
+    }
+
+    // Пробуем загрузить
+    if (imgSrc) {
+      const test = new Image();
+      test.onload = () => startEditor(imgSrc);
+      test.onerror = () => {
+        document.getElementById("fallback").style.display = "flex";
+      };
+      test.src = imgSrc;
+    } else {
+      document.getElementById("fallback").style.display = "flex";
+    }
+  </script>
 </body>
 </html>
