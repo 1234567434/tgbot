@@ -2,95 +2,149 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
   <title>T-Team Meme Editor</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <script src="https://scaleflex.cloudimg.io/v7/plugins/filerobot-image-editor/latest/filerobot-image-editor.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #0d0d0d; color: #fff; font-family: system-ui, sans-serif; height: 100vh; overflow: hidden; }
-    #editor { width: 100%; height: 100%; }
-    #fallback {
-      display: none; flex-direction: column; align-items: center; justify-content: center;
-      height: 100%; gap: 20px; padding: 20px; text-align: center;
-    }
-    button {
-      background: #00d2ff; color: #000; border: none; padding: 14px 28px;
-      border-radius: 12px; font-size: 16px; font-weight: bold; cursor: pointer;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body { background: #121212; color: #fff; font-family: -apple-system, BlinkMacSystemFont, sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    header { background: #1e1e1e; padding: 12px; text-align: center; font-weight: bold; color: #00FFCC; border-bottom: 1px solid #333; }
+    #main-area { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; background: #000; overflow: hidden; }
+    #image-container { max-width: 100%; max-height: 100%; display: flex; align-items: center; justify-content: center; }
+    img { max-width: 100%; max-height: 80vh; display: block; }
+    #tools { background: #1e1e1e; padding: 10px; display: flex; gap: 8px; overflow-x: auto; border-top: 1px solid #333; }
+    button, label.btn { background: #2a2a2a; color: #fff; border: 1px solid #444; padding: 10px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+    button.accent { background: #00FFCC; color: #000; border: none; }
     input[type=file] { display: none; }
+    #text-overlay { position: absolute; color: #fff; font-size: 28px; font-weight: 900; text-shadow: 2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000; cursor: move; pointer-events: auto; }
   </style>
 </head>
 <body>
-  <div id="editor"></div>
-  <div id="fallback">
-    <h2>😿 Не удалось загрузить картинку</h2>
-    <p>Telegram иногда блокирует прямые ссылки.<br>Загрузи фото вручную:</p>
-    <button onclick="document.getElementById('file').click()">📷 Выбрать фото</button>
-    <input type="file" id="file" accept="image/*" onchange="loadLocal(event)">
+  <header>🎨 T-Team Meme Editor</header>
+  
+  <div id="main-area">
+    <div id="image-container">
+      <img id="img" src="" alt="Cat"/>
+    </div>
+    <div id="text-overlay" style="display:none;">ТВОЙ ТЕКСТ</div>
+  </div>
+
+  <div id="tools">
+    <label class="btn" for="file-input">📷 Выбрать фото</label>
+    <input type="file" id="file-input" accept="image/*"/>
+    <button onclick="addText()">💬 Добавить текст</button>
+    <button onclick="addEmoji('🐱')">🐱</button>
+    <button onclick="addEmoji('🔥')">🔥</button>
+    <button onclick="addEmoji('🕶️')">🕶️</button>
+    <button onclick="rotateImg()">🔄 Повернуть</button>
+    <button class="accent" onclick="saveMeme()">💾 Сохранить мем</button>
   </div>
 
   <script>
     const tg = window.Telegram.WebApp;
-    tg.ready();
-    tg.expand();
+    tg.ready(); tg.expand();
 
+    const img = document.getElementById('img');
+    const textOverlay = document.getElementById('text-overlay');
+    let cropper = null;
+
+    // Авто-загрузка изображения
     const params = new URLSearchParams(location.search);
-    let imgSrc = params.get("img");
+    const imgUrl = params.get("img");
 
-    // Если передали file_id + token — собираем ссылку
-    const fileId = params.get("file_id");
-    const token  = params.get("bot_token");
-    if (fileId && token) {
-      // Telegram file links часто не работают из WebApp → сразу показываем fallback
-      imgSrc = null;
-    }
-
-    function startEditor(source) {
-      document.getElementById("fallback").style.display = "none";
-      document.getElementById("editor").style.display = "block";
-
-      const { TABS, TOOLS } = FilerobotImageEditor;
-      const editor = new FilerobotImageEditor(document.getElementById("editor"), {
-        source: source,
-        onSave: (edited) => {
-          const a = document.createElement("a");
-          a.href = edited.imageBase64;
-          a.download = "tteam_meme.png";
-          a.click();
-          tg.showAlert("Мем сохранён на устройство! 🎉");
-        },
-        tabsIds: [TABS.ANNOTATE, TABS.ADJUST, TABS.FINETUNE, TABS.RESIZE],
-        defaultTabId: TABS.ANNOTATE,
-        defaultToolId: TOOLS.TEXT,
-        theme: {
-          palette: {
-            "bg-primary": "#0d0d0d",
-            "accent-primary": "#00d2ff"
-          }
-        }
-      });
-      editor.render();
-    }
-
-    function loadLocal(e) {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (ev) => startEditor(ev.target.result);
-      reader.readAsDataURL(file);
-    }
-
-    // Пробуем загрузить
-    if (imgSrc) {
-      const test = new Image();
-      test.onload = () => startEditor(imgSrc);
-      test.onerror = () => {
-        document.getElementById("fallback").style.display = "flex";
-      };
-      test.src = imgSrc;
+    if (imgUrl) {
+      img.src = imgUrl;
+      initCropper();
     } else {
-      document.getElementById("fallback").style.display = "flex";
+      // Заглушка
+      img.src = "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=500";
+      initCropper();
+    }
+
+    document.getElementById('file-input').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          if (cropper) cropper.destroy();
+          img.src = ev.target.result;
+          initCropper();
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+
+    function initCropper() {
+      img.onload = () => {
+        if (cropper) cropper.destroy();
+        cropper = new Cropper(img, {
+          viewMode: 1,
+          background: false,
+          autoCropArea: 1
+        });
+      };
+    }
+
+    function rotateImg() {
+      if (cropper) cropper.rotate(90);
+    }
+
+    function addText() {
+      const txt = prompt("Введи текст мема:", "КОГДА ПОКУШАЛ");
+      if (txt) {
+        textOverlay.innerText = txt.toUpperCase();
+        textOverlay.style.display = "block";
+        textOverlay.style.top = "20px";
+        textOverlay.style.left = "20px";
+      }
+    }
+
+    function addEmoji(e) {
+      textOverlay.innerText += " " + e;
+      textOverlay.style.display = "block";
+    }
+
+    // Простейшее перетаскивание текста
+    let isDragging = false, startX, startY, initialX, initialY;
+    textOverlay.addEventListener('touchstart', (e) => {
+      isDragging = true;
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      initialX = textOverlay.offsetLeft;
+      initialY = textOverlay.offsetTop;
+    });
+    window.addEventListener('touchmove', (e) => {
+      if (!isDragging) return;
+      const dx = e.touches[0].clientX - startX;
+      const dy = e.touches[0].clientY - startY;
+      textOverlay.style.left = (initialX + dx) + 'px';
+      textOverlay.style.top = (initialY + dy) + 'px';
+    });
+    window.addEventListener('touchend', () => isDragging = false);
+
+    function saveMeme() {
+      if (!cropper) return;
+      const canvas = cropper.getCroppedCanvas();
+      const ctx = canvas.getContext('2d');
+
+      // Накладываем текст на Canvas перед сохранением
+      if (textOverlay.style.display !== "none") {
+        ctx.font = "bold 36px Impact, sans-serif";
+        ctx.fillStyle = "white";
+        ctx.strokeStyle = "black";
+        ctx.lineWidth = 4;
+        ctx.textAlign = "center";
+        ctx.strokeText(textOverlay.innerText, canvas.width / 2, 50);
+        ctx.fillText(textOverlay.innerText, canvas.width / 2, 50);
+      }
+
+      const link = document.createElement('a');
+      link.download = 'cat_meme.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+      tg.showAlert("Мем сохранен на устройство! 🐱");
     }
   </script>
 </body>
